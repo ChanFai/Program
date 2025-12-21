@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档资源管理平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .file-item {
+            transition: all 0.3s ease;
+        }
+        .file-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="text-center mb-4">Jenny的文档资源管理平台</h1>
+            </div>
+        </div>
+        
+        <!-- 上传区域 -->
+        <div class="row mb-4">
+            <div class="col-lg-8 mx-auto">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-cloud-upload"></i> 文件上传</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="upload-area" @click="selectFile" @dragover.prevent @drop.prevent="handleDrop">
+                            <i class="bi bi-folder-plus fs-1 text-muted"></i>
+                            <h4 class="mt-3 text-muted">点击选择文件或拖拽文件到这里</h4>
+                            <p class="text-muted">支持任意格式文件，无大小限制（大文件自动分片上传）</p>
+                        </div>
+                        <input type="file" ref="fileInput" @change="handleFileSelect" style="display: none;" multiple>
+                        
+                        <!-- 上传进度 -->
+                        <div v-if="uploadProgress.length > 0" class="mt-3">
+                            <div v-for="(progress, index) in uploadProgress" :key="index" class="mb-3 p-2 border rounded">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="fw-bold">{{ progress.name }}</small>
+                                    <small class="text-muted">{{ progress.percentage }}%</small>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="text-muted">
+                                        <span v-if="progress.status === 'calculating'">计算文件MD5中...</span>
+                                        <span v-else-if="progress.status === 'merging'">合并分片中...</span>
+                                        <span v-else-if="progress.status === 'uploading'">
+                                            <span v-if="progress.chunks">分片上传中 ({{ progress.uploadedChunks }}/{{ progress.chunks }})</span>
+                                            <span v-else>上传中...</span>
+                                        </span>
+                                        <span v-else-if="progress.status === 'success'" class="text-success">上传成功</span>
+                                        <span v-else-if="progress.status === 'error'" class="text-danger">上传失败</span>
+                                    </small>
+                                    <small class="text-muted" v-if="progress.speed">{{ progress.speed }}</small>
+                                </div>
+                                <div class="progress" style="height: 8px;">
+                                    <div class="progress-bar" :class="{
+                                        'bg-success': progress.status === 'success',
+                                        'bg-danger': progress.status === 'error',
+                                        'bg-info': progress.status === 'calculating' || progress.status === 'merging',
+                                        'progress-bar-striped progress-bar-animated': progress.status === 'uploading'
+                                    }" :style="{ width: progress.percentage + '%' }"></div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-1">
+                                    <small class="text-muted">{{ formatFileSize(progress.uploaded) }} / {{ formatFileSize(progress.total) }}</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 消息提示 -->
+        <div class="row mb-4">
+            <div class="col-lg-8 mx-auto">
+                <div v-if="message" :class="['alert', message.type === 'success' ? 'alert-success' : 'alert-danger', 'alert-dismissible fade show']" role="alert">
+                    {{ message.text }}
+                    <button type="button" class="btn-close" @click="message = null"></button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 文档列表 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-files"></i> 文档列表</h5>
+                        <button @click="loadDocuments" class="btn btn-light btn-sm">
+                            <i class="bi bi-arrow-repeat"></i> 刷新
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div v-if="loading" class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                        </div>
+                        
+                        <div v-else-if="documents.length === 0" class="text-center py-4">
+                            <i class="bi bi-inbox fs-1 text-muted"></i>
+                            <p class="text-muted mt-2">暂无文档</p>
+                        </div>
+                        
+                        <div v-else>
+                            <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+                                <div v-for="doc in documents" :key="doc.id" class="col">
+                                    <div class="card file-item h-100">
+                                        <div class="card-body d-flex flex-column">
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <h6 class="card-title text-truncate">{{ doc.filename }}</h6>
+                                                <span class="badge bg-primary">v{{ doc.version }}</span>
+                                            </div>
+                                            
+                                            <div class="mt-auto">
+                                                <div class="d-flex justify-content-between small text-muted mb-2">
+                                                    <span><i class="bi bi-hdd"></i> {{ formatFileSize(doc.fileSize) }}</span>
+                                                    <span><i class="bi bi-download"></i> {{ doc.downloadCount }}</span>
+                                                </div>
+                                                
+                                                <div class="small text-muted mb-3">
+                                                    <div><i class="bi bi-calendar"></i> {{ formatDate(doc.uploadTime) }}</div>
+                                                    <div><i class="bi bi-hash"></i> {{ doc.fileHash.substring(0, 8) }}...</div>
+                                                </div>
+                                                
+                                                <div class="btn-group w-100" role="group">
+                                                    <a :href="'/api/documents/' + doc.id + '/download-stream'" class="btn btn-outline-success btn-sm" title="支持断点续传">
+                                                        <i class="bi bi-download"></i> 下载
+                                                    </a>
+                                                    <button @click="deleteDocument(doc.id)" class="btn btn-outline-danger btn-sm">
+                                                        <i class="bi bi-trash"></i> 删除
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js"></script>
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                documents: [],
+                loading: false,
+                message: null,
+                uploadProgress: []
+            },
+            mounted() {
+                this.loadDocuments();
+            },
+            methods: {
+                loadDocuments() {
+                    this.loading = true;
+                    axios.get('/api/documents')
+                        .then(response => {
+                            this.documents = response.data;
+                        })
+                        .catch(error => {
+                            this.showMessage('获取文档列表失败: ' + error.message, 'error');
+                        })
+                        .finally(() => {
+                            this.loading = false;
+                        });
+                },
+                
+                selectFile() {
+                    this.$refs.fileInput.click();
+                },
+                
+                handleFileSelect(event) {
+                    const files = Array.from(event.target.files);
+                    this.uploadFiles(files);
+                },
+                
+                handleDrop(event) {
+                    const files = Array.from(event.dataTransfer.files);
+                    this.uploadFiles(files);
+                },
+                
+                uploadFiles(files) {
+                    files.forEach((file, index) => {
+                        // 为了测试大文件上传功能，所有文件都使用分片上传
+                        // 如果需要区分大小文件，可以设置阈值，例如：const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+                        // 当前配置：所有文件都使用分片上传，更好地展示大文件上传功能
+                        const CHUNK_SIZE = 0; // 设置为0，所有文件都使用分片上传
+                        if (file.size > CHUNK_SIZE) {
+                            this.uploadFileWithChunks(file);
+                        } else {
+                            this.uploadFileNormal(file);
+                        }
+                    });
+                    
+                    // 清空文件输入框
+                    this.$refs.fileInput.value = '';
+                },
+                
+                // 普通上传（小文件）
+                uploadFileNormal(file) {
+                    const progressItem = {
+                        name: file.name,
+                        percentage: 0,
+                        status: 'uploading',
+                        speed: '0 KB/s',
+                        uploaded: 0,
+                        total: file.size
+                    };
+                    this.uploadProgress.push(progressItem);
+                    
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    
+                    const startTime = Date.now();
+                    let lastLoaded = 0;
+                    let lastTime = startTime;
+                    
+                    axios.post('/api/documents', formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data'
+                        },
+                        onUploadProgress: (progressEvent) => {
+                            if (progressEvent.lengthComputable) {
+                                const percentage = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                                progressItem.percentage = percentage;
+                                progressItem.uploaded = progressEvent.loaded;
+                                
+                                // 计算上传速度
+                                const now = Date.now();
+                                const timeDiff = (now - lastTime) / 1000; // 秒
+                                if (timeDiff >= 1) {
+                                    const loadedDiff = progressEvent.loaded - lastLoaded;
+                                    const speed = loadedDiff / timeDiff; // 字节/秒
+                                    progressItem.speed = this.formatFileSize(speed) + '/s';
+                                    lastLoaded = progressEvent.loaded;
+                                    lastTime = now;
+                                }
+                            }
+                        }
+                    })
+                    .then(response => {
+                        progressItem.status = 'success';
+                        progressItem.percentage = 100;
+                        this.showMessage('文件上传成功: ' + file.name, 'success');
+                        this.loadDocuments();
+                        // 3秒后移除进度条
+                        setTimeout(() => {
+                            const index = this.uploadProgress.indexOf(progressItem);
+                            if (index > -1) {
+                                this.uploadProgress.splice(index, 1);
+                            }
+                        }, 3000);
+                    })
+                    .catch(error => {
+                        progressItem.status = 'error';
+                        this.showMessage('文件上传失败: ' + file.name + ' - ' + error.message, 'error');
+                    });
+                },
+                
+                // 分片上传（大文件）
+                async uploadFileWithChunks(file) {
+                    const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+                    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+                    
+                    const progressItem = {
+                        name: file.name,
+                        percentage: 0,
+                        status: 'uploading',
+                        speed: '0 KB/s',
+                        uploaded: 0,
+                        total: file.size,
+                        chunks: totalChunks,
+                        uploadedChunks: 0
+                    };
+                    this.uploadProgress.push(progressItem);
+                    
+                    try {
+                        // 计算文件MD5（用于去重和断点续传）
+                        progressItem.status = 'calculating';
+                        const fileHash = await this.calculateFileMD5(file);
+                        
+                        // 初始化分片上传
+                        const initResponse = await axios.post('/api/documents/chunk/init', null, {
+                            params: {
+                                filename: file.name,
+                                fileHash: fileHash,
+                                fileSize: file.size,
+                                totalChunks: totalChunks
+                            }
+                        });
+                        
+                        // 检查是否已存在（同名同内容）
+                        if (initResponse.data.exists) {
+                            progressItem.status = 'success';
+                            progressItem.percentage = 100;
+                            this.showMessage('文件已存在（同名同内容），已跳过上传: ' + file.name, 'success');
+                            this.loadDocuments();
+                            setTimeout(() => {
+                                const index = this.uploadProgress.indexOf(progressItem);
+                                if (index > -1) {
+                                    this.uploadProgress.splice(index, 1);
+                                }
+                            }, 3000);
+                            return;
+                        }
+                        
+                        // 获取已上传的分片（断点续传）
+                        let uploadedChunks = initResponse.data.uploadedChunks || [];
+                        if (initResponse.data.resume) {
+                            this.showMessage('检测到未完成的上传，继续上传: ' + file.name, 'success');
+                        }
+                        
+                        // 上传所有分片
+                        const uploadPromises = [];
+                        const startTime = Date.now();
+                        let lastUploaded = 0;
+                        let lastTime = startTime;
+                        
+                        for (let i = 0; i < totalChunks; i++) {
+                            // 跳过已上传的分片
+                            if (uploadedChunks.includes(i)) {
+                                progressItem.uploadedChunks++;
+                                continue;
+                            }
+                            
+                            const start = i * CHUNK_SIZE;
+                            const end = Math.min(start + CHUNK_SIZE, file.size);
+                            const chunk = file.slice(start, end);
+                            
+                            const formData = new FormData();
+                            formData.append('chunk', chunk);
+                            formData.append('fileHash', fileHash);
+                            formData.append('chunkIndex', i);
+                            
+                            const uploadPromise = axios.post('/api/documents/chunk/upload', formData, {
+                                headers: {
+                                    'Content-Type': 'multipart/form-data'
+                                }
+                            }).then(response => {
+                                progressItem.uploadedChunks++;
+                                progressItem.uploaded = Math.min(progressItem.uploaded + chunk.size, file.size);
+                                
+                                // 更新进度
+                                const percentage = Math.round((progressItem.uploadedChunks * 100) / totalChunks);
+                                progressItem.percentage = percentage;
+                                
+                                // 计算速度
+                                const now = Date.now();
+                                const timeDiff = (now - lastTime) / 1000;
+                                if (timeDiff >= 1) {
+                                    const uploadedDiff = progressItem.uploaded - lastUploaded;
+                                    const speed = uploadedDiff / timeDiff;
+                                    progressItem.speed = this.formatFileSize(speed) + '/s';
+                                    lastUploaded = progressItem.uploaded;
+                                    lastTime = now;
+                                }
+                            }).catch(error => {
+                                throw new Error(`分片 ${i} 上传失败: ${error.message}`);
+                            });
+                            
+                            uploadPromises.push(uploadPromise);
+                            
+                            // 限制并发数（最多3个并发）
+                            if (uploadPromises.length >= 3) {
+                                await Promise.all(uploadPromises);
+                                uploadPromises.length = 0;
+                            }
+                        }
+                        
+                        // 等待剩余分片上传完成
+                        await Promise.all(uploadPromises);
+                        
+                        // 合并分片
+                        progressItem.status = 'merging';
+                        const mergeResponse = await axios.post('/api/documents/chunk/merge', null, {
+                            params: {
+                                fileHash: fileHash,
+                                filename: file.name,
+                                contentType: file.type || 'application/octet-stream'
+                            }
+                        });
+                        
+                        progressItem.status = 'success';
+                        progressItem.percentage = 100;
+                        this.showMessage('文件上传成功: ' + file.name, 'success');
+                        this.loadDocuments();
+                        
+                        // 3秒后移除进度条
+                        setTimeout(() => {
+                            const index = this.uploadProgress.indexOf(progressItem);
+                            if (index > -1) {
+                                this.uploadProgress.splice(index, 1);
+                            }
+                        }, 3000);
+                        
+                    } catch (error) {
+                        progressItem.status = 'error';
+                        this.showMessage('文件上传失败: ' + file.name + ' - ' + error.message, 'error');
+                    }
+                },
+                
+                // 计算文件MD5
+                calculateFileMD5(file) {
+                    return new Promise((resolve, reject) => {
+                        const blobSlice = File.prototype.slice || File.prototype.mozSlice || File.prototype.webkitSlice;
+                        const chunkSize = 2 * 1024 * 1024; // 2MB chunks
+                        const chunks = Math.ceil(file.size / chunkSize);
+                        let currentChunk = 0;
+                        const spark = new SparkMD5.ArrayBuffer();
+                        const fileReader = new FileReader();
+                        
+                        fileReader.onload = function(e) {
+                            spark.append(e.target.result);
+                            currentChunk++;
+                            
+                            if (currentChunk < chunks) {
+                                loadNext();
+                            } else {
+                                resolve(spark.end());
+                            }
+                        };
+                        
+                        fileReader.onerror = function() {
+                            reject(new Error('文件读取失败'));
+                        };
+                        
+                        function loadNext() {
+                            const start = currentChunk * chunkSize;
+                            const end = Math.min(start + chunkSize, file.size);
+                            fileReader.readAsArrayBuffer(blobSlice.call(file, start, end));
+                        }
+                        
+                        loadNext();
+                    });
+                },
+                
+                deleteDocument(id) {
+                    if (confirm('确定要删除这个文件吗？')) {
+                        axios.delete(`/api/documents/${id}`)
+                            .then(response => {
+                                this.showMessage('文件删除成功', 'success');
+                                // 重新加载文档列表
+                                this.loadDocuments();
+                            })
+                            .catch(error => {
+                                this.showMessage('文件删除失败: ' + error.message, 'error');
+                            });
+                    }
+                },
+                
+                formatFileSize(bytes) {
+                    if (bytes === 0) return '0 Bytes';
+                    const k = 1024;
+                    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                },
+                
+                formatDate(dateString) {
+                    const date = new Date(dateString);
+                    return date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN');
+                },
+                
+                showMessage(text, type) {
+                    this.message = {
+                        text: text,
+                        type: type === 'success' ? 'success' : 'danger'
+                    };
+                    
+                    // 3秒后自动隐藏消息
+                    setTimeout(() => {
+                        this.message = null;
+                    }, 3000);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
