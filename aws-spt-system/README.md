@@ -10,7 +10,7 @@
 
 符合AWS SPP技术验证要求的工单管理系统
 
-**目录**: [aws-spt-system/](./aws-spt-system/)
+**目录**: 当前根目录
 
 **功能特性**:
 - ✅ SPT-001: 基础SLA - 可配置的响应时间SLA
@@ -23,9 +23,9 @@
 **技术栈**: React 18 + TypeScript + Node.js + Express + PostgreSQL + AWS Services
 
 **文档**: 
-- [快速开始](./aws-spt-system/QUICKSTART.md)
-- [运行指南](./aws-spt-system/RUNNING.md)
-- [SPT合规文档](./aws-spt-system/docs/SPT-SUMMARY.md)
+- [快速开始](./QUICKSTART.md)
+- [运行指南](./RUNNING.md)
+- [SPT合规文档](./docs/SPT-SUMMARY.md)
 
 ---
 
