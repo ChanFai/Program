@@ -8,17 +8,17 @@
 
 ### 1. AWS Partner Support Ticket System (SPT)
 
-符合AWS SPP技术验证要求的工单管理系统
+符合验证要求的工单管理系统
 
 **目录**: [aws-spt-system/](./aws-spt-system/)
 
 **功能特性**:
-- ✅ SPT-001: 基础SLA - 可配置的响应时间SLA
-- ✅ SPT-002: 客户服务可用性 - 24x7多渠道支持
-- ✅ SPT-003: 工单创建 - Web门户、邮件、API
-- ✅ SPT-004: 服务台运营 - 优先级和严重性级别管理
-- ✅ SPT-005: AWS Support Case监控 - 自动同步AWS Support Case
-- ✅ SPT-006: AWS事件管理 - 组织级Health Dashboard监控
+-  SPT-001: 基础SLA - 可配置的响应时间SLA
+-  SPT-002: 客户服务可用性 - 24x7多渠道支持
+-  SPT-003: 工单创建 - Web门户、邮件、API
+-  SPT-004: 服务台运营 - 优先级和严重性级别管理
+-  SPT-005: AWS Support Case监控 - 自动同步AWS Support Case
+-  SPT-006: AWS事件管理 - 组织级Health Dashboard监控
 
 **技术栈**: React 18 + TypeScript + Node.js + Express + PostgreSQL + AWS Services
 
