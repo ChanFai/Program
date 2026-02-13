@@ -20,7 +20,7 @@
 -  SPT-005: AWS Support Case监控 - 自动同步AWS Support Case
 -  SPT-006: AWS事件管理 - 组织级Health Dashboard监控
 
-**技术栈**: React 18 + TypeScript + Node.js + Express + PostgreSQL + AWS Services
+**技术栈**: vue + TypeScript + Node.js + Java + Mysql 
 
 **文档**: 
 - [快速开始](./aws-spt-system/QUICKSTART.md)
